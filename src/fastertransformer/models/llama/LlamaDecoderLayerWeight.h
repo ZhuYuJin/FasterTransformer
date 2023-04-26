@@ -53,7 +53,7 @@ private:
     bool      use_gptj_residual_;
     const int attention_dense_bias_weight_id = 5;
     bool      is_maintain_buffer             = false;
-    T*        weights_ptr[14];
+    T*        weights_ptr[18];
 
     void setWeightPtr();
     void mallocWeights();

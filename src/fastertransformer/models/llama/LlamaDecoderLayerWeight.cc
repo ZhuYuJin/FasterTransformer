@@ -53,6 +53,10 @@ LlamaDecoderLayerWeight<T>::~LlamaDecoderLayerWeight()
         self_attention_weights.attention_output_weight.bias   = nullptr;
         post_attention_layernorm_weights.beta                 = nullptr;
         post_attention_layernorm_weights.gamma                = nullptr;
+        self_attention_weights.lora_A_weight.kernel           = nullptr;
+        self_attention_weights.lora_A_weight.bias             = nullptr;
+        self_attention_weights.lora_B_weight.kernel           = nullptr;
+        self_attention_weights.lora_B_weight.bias             = nullptr;
 
         ffn_weights.intermediate_weight.kernel = nullptr;
         ffn_weights.intermediate_weight.bias   = nullptr;
@@ -92,6 +96,11 @@ LlamaDecoderLayerWeight<T>::LlamaDecoderLayerWeight(const LlamaDecoderLayerWeigh
     cudaD2Dcpy(weights_ptr[11], other.weights_ptr[11], hidden_units_);
     cudaD2Dcpy(weights_ptr[12], other.weights_ptr[12], hidden_units_);
     cudaD2Dcpy(weights_ptr[13], other.weights_ptr[13], hidden_units_);
+
+    cudaD2Dcpy(weights_ptr[14], other.weights_ptr[14], hidden_units_ * 2 * 8);
+    cudaD2Dcpy(weights_ptr[15], other.weights_ptr[15], 2 * 8);
+    cudaD2Dcpy(weights_ptr[16], other.weights_ptr[16], 8 * 2 * hidden_units_);
+    cudaD2Dcpy(weights_ptr[17], other.weights_ptr[17], 2 * hidden_units_);
     setWeightPtr();
 }
 
@@ -122,6 +131,11 @@ LlamaDecoderLayerWeight<T>& LlamaDecoderLayerWeight<T>::operator=(const LlamaDec
     cudaD2Dcpy(weights_ptr[11], other.weights_ptr[11], hidden_units_);
     cudaD2Dcpy(weights_ptr[12], other.weights_ptr[12], hidden_units_);
     cudaD2Dcpy(weights_ptr[13], other.weights_ptr[13], hidden_units_);
+    
+    cudaD2Dcpy(weights_ptr[14], other.weights_ptr[14], hidden_units_ * 2 * 8);
+    cudaD2Dcpy(weights_ptr[15], other.weights_ptr[15], 2 * 8);
+    cudaD2Dcpy(weights_ptr[16], other.weights_ptr[16], 8 * 2 * hidden_units_);
+    cudaD2Dcpy(weights_ptr[17], other.weights_ptr[17], 2 * hidden_units_);
     setWeightPtr();
     return *this;
 }
@@ -173,6 +187,17 @@ void LlamaDecoderLayerWeight<T>::loadModel(std::string dir_path, FtCudaDataType 
     deviceFill(weights_ptr[12], (size_t)(hidden_units_), (T)0.0);
     loadWeightFromBin<T>(
         weights_ptr[13], {(size_t)hidden_units_}, dir_path + ".post_attention_layernorm.weight.bin", model_file_type);
+
+    loadWeightFromBin<T>(weights_ptr[14],
+                         {(size_t)hidden_units_, (size_t)(2 * 8)},
+                         dir_path + ".attention.lora_A.weight." + rank_spec + ".bin",
+                         model_file_type);
+    deviceFill(weights_ptr[15], (size_t)(2 * 8), (T)0.0);
+    loadWeightFromBin<T>(weights_ptr[16],
+                         {(size_t)8, (size_t)(2 * hidden_units_)},
+                         dir_path + ".attention.lora_B.weight." + rank_spec + ".bin",
+                         model_file_type);
+    deviceFill(weights_ptr[17], (size_t)(2 * hidden_units_), (T)0.0);
 }
 
 template<typename T>
@@ -194,6 +219,12 @@ void LlamaDecoderLayerWeight<T>::setWeightPtr()
 
     post_attention_layernorm_weights.beta  = weights_ptr[12];
     post_attention_layernorm_weights.gamma = weights_ptr[13];
+
+    self_attention_weights.lora_A_weight.kernel            = weights_ptr[14];
+    self_attention_weights.lora_A_weight.bias              = weights_ptr[15];
+    self_attention_weights.lora_B_weight.kernel            = weights_ptr[16];
+    self_attention_weights.lora_B_weight.bias              = weights_ptr[17];
+
     is_maintain_buffer                     = true;
 }
 
@@ -217,6 +248,11 @@ void LlamaDecoderLayerWeight<T>::mallocWeights()
     deviceMalloc(&weights_ptr[11], hidden_units_);                                   // output_weight bias
     deviceMalloc(&weights_ptr[12], hidden_units_); // post attn layernorm beta
     deviceMalloc(&weights_ptr[13], hidden_units_); // post attn layernorm gamma
+
+    deviceMalloc(&weights_ptr[14], hidden_units_ * 2 * 8); // query lora_A weight
+    deviceMalloc(&weights_ptr[15], 2 * 8); // query lora_A bias
+    deviceMalloc(&weights_ptr[16], 8 * 2 * hidden_units_); // query lora_B weight
+    deviceMalloc(&weights_ptr[17], 2 * hidden_units_); // query lora_B bias
 }
 
 template struct LlamaDecoderLayerWeight<float>;

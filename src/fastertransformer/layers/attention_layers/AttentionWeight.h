@@ -28,6 +28,8 @@ struct AttentionWeight {
     DenseWeight<T1, T2> attention_output_weight;
     DenseWeight<T1, T2> ia3_key_weight;
     DenseWeight<T1, T2> ia3_value_weight;
+    DenseWeight<T1, T2> lora_A_weight;
+    DenseWeight<T1, T2> lora_B_weight;
 };
 
 }  // namespace fastertransformer
