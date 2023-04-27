@@ -142,6 +142,33 @@ void GptContextAttentionLayer<T>::forward(TensorMap*                output_tenso
 
     sync_check_cuda_error();
 
+    // TODO: lora
+    // 1. query
+    cublas_wrapper_->Gemm(CUBLAS_OP_N,
+                              CUBLAS_OP_N,
+                              8,  // n
+                              m,
+                              hidden_units_,  // k
+                              attention_weights->lora_A_weight.kernel,
+                              8,  // n
+                              attention_input,
+                              hidden_units_,  // k
+                              q_loraA_buf_,
+                              8 /* n */);
+    cublas_wrapper_->Gemm(CUBLAS_OP_N,
+                              CUBLAS_OP_N,
+                              local_hidden_units_,  // n
+                              m,
+                              8,  // k
+                              attention_weights->lora_B_weight.kernel,
+                              local_hidden_units_,  // n
+                              q_loraA_buf_,
+                              8,  // k
+                              q_loraB_buf_,
+                              local_hidden_units_ /* n */);
+    q_buf_2_ = add(q_buf_2_, q_loraB_buf_);
+    // 2. value
+
     // IDEA: append prefix prompt key value here
     PrefixPromptBatchWeightsParam<T> param{d_prefix_prompt_batch,
                                            d_prefix_prompt_lengths,
@@ -554,6 +581,10 @@ void GptContextAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_l
     }
     qkv_buf_2_ = (T*)allocator_->reMalloc(qkv_buf_2_, sizeof(T) * batch_size * seq_len * local_hidden_units_, true);
     qkv_buf_3_ = (T*)allocator_->reMalloc(qkv_buf_3_, type_size * batch_size * seq_len * local_hidden_units_, true);
+
+    // TODO: robertzhu
+    q_loraA_buf_ = (T*)allocator_->reMalloc(q_loraA_buf_, type_size * batch_size * seq_len * 8, true);
+    q_loraB_buf_ = (T*)allocator_->reMalloc(q_loraB_buf_, type_size * batch_size * 8 * local_hidden_units_, true);
 
     if (is_qk_buf_float_ == true) {
         if (allocate_qk_buf) {

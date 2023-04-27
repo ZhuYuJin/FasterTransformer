@@ -74,6 +74,9 @@ protected:
     char*  int8_gemm_workspace_  = nullptr;
     size_t int8_gemm_ws_bytes_   = 0;
 
+    T*     q_loraA_buf_              = nullptr;
+    T*     q_loraB_buf_              = nullptr;
+
     // int8_mode_ == 0 means we don't use any mechanism related to INT8.
     // int8_mode_ == 1 for weight quantized only gemm for GPT
     // int8_mode_ == 2 for SmoothQuant O3 (per tensor scales)
