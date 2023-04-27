@@ -18,9 +18,42 @@
 #include "src/fastertransformer/layers/attention_layers/GptContextAttentionLayer.h"
 #include "src/fastertransformer/kernels/unfused_attention_kernels.h"
 #include "src/fastertransformer/utils/nvtx_utils.h"
-#include "src/fastertransformer/utils/cuda_type_utils.cuh"
+#include <iostream>
 
 namespace fastertransformer {
+
+__global__ void vecAdd(half *a, half *b, half *c, int n)
+{
+    // Get our global thread ID
+    int id = blockIdx.x*blockDim.x+threadIdx.x;
+
+    // Make sure we do not go out of bounds
+    if (id < n)
+        c[id] = a[id] + a[id] + b[id];
+}
+
+float float32(const uint16_t in) {
+    float out;
+    uint32_t t1;
+    uint32_t t2;
+    uint32_t t3;
+
+    t1 = in & 0x7fffu;                       // Non-sign bits
+    t2 = in & 0x8000u;                       // Sign bit
+    t3 = in & 0x7c00u;                       // Exponent
+
+    t1 <<= 13u;                              // Align mantissa on MSB
+    t2 <<= 16u;                              // Shift sign bit into position
+
+    t1 += 0x38000000;                       // Adjust bias
+
+    t1 = (t3 == 0 ? 0 : t1);                // Denormals-as-zero
+
+    t1 |= t2;                               // Re-insert sign bit
+
+    *((uint32_t *) &out) = t1;
+    return out;
+};
 
 template<typename T>
 void GptContextAttentionLayer<T>::forward(TensorMap*                output_tensors,
@@ -143,32 +176,114 @@ void GptContextAttentionLayer<T>::forward(TensorMap*                output_tenso
 
     sync_check_cuda_error();
 
-    // TODO: lora
-    // 1. query
-    cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                              CUBLAS_OP_N,
-                              8,  // n
-                              m,
-                              hidden_units_,  // k
-                              attention_weights->lora_A_weight.kernel,
-                              8,  // n
-                              attention_input,
-                              hidden_units_,  // k
-                              q_loraA_buf_,
-                              8 /* n */);
-    cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                              CUBLAS_OP_N,
-                              local_hidden_units_,  // n
-                              m,
-                              8,  // k
-                              attention_weights->lora_B_weight.kernel,
-                              local_hidden_units_,  // n
-                              q_loraA_buf_,
-                              8,  // k
-                              q_loraB_buf_,
-                              local_hidden_units_ /* n */);
-    q_buf_2_ = add(q_buf_2_, q_loraB_buf_);
-    // 2. value
+    // // TODO: lora
+    // // 1. query
+    // // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+    // //                           CUBLAS_OP_N,
+    // //                           8,  // n
+    // //                           m,
+    // //                           hidden_units_,  // k
+    // //                           attention_weights->lora_A_weight.kernel,
+    // //                           8,  // n
+    // //                           attention_input,
+    // //                           hidden_units_,  // k
+    // //                           q_loraA_buf_,
+    // //                           8 /* n */);
+    // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+    //                         CUBLAS_OP_N,
+    //                         8,  // n
+    //                         m,
+    //                         hidden_units_,  // k
+    //                         attention_weights->lora_A_weight.kernel,
+    //                         8,  // n
+    //                         attention_input,
+    //                         hidden_units_,  // k
+    //                         q_loraA_buf_,
+    //                         8 /* n */);
+    // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+    //                           CUBLAS_OP_N,
+    //                           local_hidden_units_,  // n
+    //                           m,
+    //                           8,  // k
+    //                           attention_weights->lora_B_weight.kernel,
+    //                           local_hidden_units_,  // n
+    //                           q_loraA_buf_,
+    //                           8,  // k
+    //                           q_loraB_buf_,
+    //                           local_hidden_units_ /* n */);
+    // std::cout << request_batch_size << " " << request_seq_len << " " << local_hidden_units_ << " " << sizeof(T) << std::endl;
+    // std::cout << m << " " << hidden_units_ << " " << local_hidden_units_ << std::endl;
+    int16_t tmp[5] = {0};
+    std::cout << "query org: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    cudaMemcpy(
+            (void*)&tmp, (void*)attention_input, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    std::cout << "x: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    cudaMemcpy(
+            (void*)&tmp, (void*)qkv_buf_, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    std::cout << "query qkv: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)attention_weights->lora_A_weight.kernel, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "query loraA weight: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)(attention_weights->lora_A_weight.kernel+hidden_units_*8-5), sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "query loraA weight last-3: " << float32(tmp[2]) << " " << float32(tmp[3]) << " " << float32(tmp[4]) << std::endl;
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)q_loraA_buf_, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "query loraA result: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)attention_weights->lora_B_weight.kernel, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "query loraB weight: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)(attention_weights->lora_B_weight.kernel+hidden_units_*8-5), sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "query loraB weight last-3: " << float32(tmp[2]) << " " << float32(tmp[3]) << " " << float32(tmp[4]) << std::endl;
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)q_loraB_buf_, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "query loraB result: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // int gridSize = request_batch_size*request_seq_len*local_hidden_units_ / 1024;
+    // vecAdd<<<gridSize, 1024>>>((half*)q_loraB_buf_, (half*)qkv_buf_, (half*)qkv_buf_, request_batch_size*request_seq_len*local_hidden_units_);
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)qkv_buf_, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "query qkv update: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    
+    // // 2. value
+    // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+    //                           CUBLAS_OP_N,
+    //                           8,  // n
+    //                           m,
+    //                           hidden_units_,  // k
+    //                           attention_weights->lora_A_weight.kernel+hidden_units_*8,
+    //                           8,  // n
+    //                           attention_input,
+    //                           hidden_units_,  // k
+    //                           q_loraA_buf_,
+    //                           8 /* n */);
+    // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+    //                           CUBLAS_OP_N,
+    //                           local_hidden_units_,  // n
+    //                           m,
+    //                           8,  // k
+    //                           attention_weights->lora_B_weight.kernel+hidden_units_*8,
+    //                           local_hidden_units_,  // n
+    //                           q_loraA_buf_,
+    //                           8,  // k
+    //                           q_loraB_buf_,
+    //                           local_hidden_units_ /* n */);
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)(attention_weights->lora_A_weight.kernel+hidden_units_*8), sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "value loraA weight: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // cudaMemcpy(
+    //         (void*)&tmp, (void*)(attention_weights->lora_B_weight.kernel+hidden_units_*8), sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // std::cout << "value loraB weight: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // // cudaMemcpy(
+    // //         (void*)&tmp, (void*)q_loraB_buf_, sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // // std::cout << "value loraB: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // // cudaMemcpy(
+    // //         (void*)&tmp, (void*)(qkv_buf_+2*request_batch_size*request_seq_len*local_hidden_units_), sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // // std::cout << "value qkv: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
+    // vecAdd<<<gridSize, 1024>>>((half*)q_loraB_buf_, (half*)(qkv_buf_+2*request_batch_size*request_seq_len*local_hidden_units_), (half*)(qkv_buf_+2*request_batch_size*request_seq_len*local_hidden_units_), request_batch_size*request_seq_len*local_hidden_units_);
+    // // cudaMemcpy(
+    // //         (void*)&tmp, (void*)(qkv_buf_+2*request_batch_size*request_seq_len*local_hidden_units_), sizeof(T)*5, cudaMemcpyDeviceToHost);
+    // // std::cout << "value qkv update: " << float32(tmp[0]) << " " << float32(tmp[1]) << " " << float32(tmp[2]) << std::endl;
 
     // IDEA: append prefix prompt key value here
     PrefixPromptBatchWeightsParam<T> param{d_prefix_prompt_batch,
@@ -585,7 +700,7 @@ void GptContextAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_l
 
     // TODO: robertzhu
     q_loraA_buf_ = (T*)allocator_->reMalloc(q_loraA_buf_, type_size * batch_size * seq_len * 8, true);
-    q_loraB_buf_ = (T*)allocator_->reMalloc(q_loraB_buf_, type_size * batch_size * 8 * local_hidden_units_, true);
+    q_loraB_buf_ = (T*)allocator_->reMalloc(q_loraB_buf_, type_size * batch_size * seq_len * local_hidden_units_, true);
 
     if (is_qk_buf_float_ == true) {
         if (allocate_qk_buf) {

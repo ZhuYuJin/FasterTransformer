@@ -131,7 +131,7 @@ LlamaDecoderLayerWeight<T>& LlamaDecoderLayerWeight<T>::operator=(const LlamaDec
     cudaD2Dcpy(weights_ptr[11], other.weights_ptr[11], hidden_units_);
     cudaD2Dcpy(weights_ptr[12], other.weights_ptr[12], hidden_units_);
     cudaD2Dcpy(weights_ptr[13], other.weights_ptr[13], hidden_units_);
-    
+
     cudaD2Dcpy(weights_ptr[14], other.weights_ptr[14], hidden_units_ * 2 * 8);
     cudaD2Dcpy(weights_ptr[15], other.weights_ptr[15], 2 * 8);
     cudaD2Dcpy(weights_ptr[16], other.weights_ptr[16], 8 * 2 * hidden_units_);
@@ -188,16 +188,16 @@ void LlamaDecoderLayerWeight<T>::loadModel(std::string dir_path, FtCudaDataType 
     loadWeightFromBin<T>(
         weights_ptr[13], {(size_t)hidden_units_}, dir_path + ".post_attention_layernorm.weight.bin", model_file_type);
 
-    loadWeightFromBin<T>(weights_ptr[14],
-                         {(size_t)hidden_units_, (size_t)(2 * 8)},
-                         dir_path + ".attention.lora_A.weight." + rank_spec + ".bin",
-                         model_file_type);
-    deviceFill(weights_ptr[15], (size_t)(2 * 8), (T)0.0);
-    loadWeightFromBin<T>(weights_ptr[16],
-                         {(size_t)8, (size_t)(2 * hidden_units_)},
-                         dir_path + ".attention.lora_B.weight." + rank_spec + ".bin",
-                         model_file_type);
-    deviceFill(weights_ptr[17], (size_t)(2 * hidden_units_), (T)0.0);
+    // loadWeightFromBin<T>(weights_ptr[14],
+    //                      {(size_t)hidden_units_, (size_t)(2 * 8)},
+    //                      dir_path + ".attention.lora_A.weight." + rank_spec + ".bin",
+    //                      model_file_type);
+    // deviceFill(weights_ptr[15], (size_t)(2 * 8), (T)0.0);
+    // loadWeightFromBin<T>(weights_ptr[16],
+    //                      {(size_t)8, (size_t)(2 * hidden_units_)},
+    //                      dir_path + ".attention.lora_B.weight." + rank_spec + ".bin",
+    //                      model_file_type);
+    // deviceFill(weights_ptr[17], (size_t)(2 * hidden_units_), (T)0.0);
 }
 
 template<typename T>

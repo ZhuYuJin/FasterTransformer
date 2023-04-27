@@ -39,7 +39,7 @@ set_property(TARGET DecoderSelfAttentionLayer PROPERTY POSITION_INDEPENDENT_CODE
 set_property(TARGET DecoderSelfAttentionLayer PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 target_link_libraries(DecoderSelfAttentionLayer PUBLIC -lcublas -lcudart cublasMMWrapper memory_utils decoder_masked_multihead_attention fpA_intB_gemm int8_gemm tensor nvtx_utils)
 
-add_library(GptContextAttentionLayer STATIC GptContextAttentionLayer.cc)
+add_library(GptContextAttentionLayer STATIC GptContextAttentionLayer.cu)
 set_property(TARGET GptContextAttentionLayer PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET GptContextAttentionLayer PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 target_link_libraries(GptContextAttentionLayer PUBLIC -lcublas -lcudart cublasMMWrapper memory_utils unfused_attention_kernels trt_fused_multi_head_attention fpA_intB_gemm int8_gemm nvtx_utils)
