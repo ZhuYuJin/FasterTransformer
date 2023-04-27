@@ -166,7 +166,7 @@ void GptContextAttentionLayer<T>::forward(TensorMap*                output_tenso
                               8,  // k
                               q_loraB_buf_,
                               local_hidden_units_ /* n */);
-    q_buf_2_ = add(q_buf_2_, q_loraB_buf_);
+    q_buf_2_ = fadd(q_buf_2_, q_loraB_buf_);
     // 2. value
 
     // IDEA: append prefix prompt key value here
